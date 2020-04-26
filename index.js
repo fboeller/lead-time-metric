@@ -8,8 +8,8 @@ const environment = {
 };
 
 const repos = [
-    { orga: 'arrow-kt', name: 'arrow', baseBranch: 'master' },
-    { orga: 'arrow-kt', name: 'arrow-core', baseBranch: 'master' },
+    // { orga: 'arrow-kt', name: 'arrow', baseBranch: 'master' },
+    // { orga: 'arrow-kt', name: 'arrow-core', baseBranch: 'master' },
     { orga: 'JasonEtco', name: 'create-an-issue', baseBranch: 'master' },
 ];
 
@@ -28,7 +28,7 @@ function removeNonWorkingHours(seconds) {
 
 function computeBranchLifeTimeInSeconds(commits, mergedAt) {
     const firstCommitDate = commits[0].commit.committer.date;
-    const durationMs =  Date.parse(mergedAt) - Date.parse(firstCommitDate);
+    const durationMs = Date.parse(mergedAt) - Date.parse(firstCommitDate);
     return removeNonWorkingHours(Math.ceil(durationMs / 1000));
 }
 
@@ -40,7 +40,8 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
         .then(response => handleError(response, token))
         .then(async response => {
             const prs = await response.json();
-            return Promise.all(prs.filter(pr => pr.merged_at)
+            const results = await Promise.all(prs
+                .filter(pr => pr.merged_at)
                 .map(pr =>
                     fetch(pr._links.commits.href, createGitHubRequestObject(token))
                         .then(response => handleError(response, token))
@@ -56,17 +57,15 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
                 console.error("Could not fetch commits of PR " + pr.url);
                 console.error(reason);
                 return [];
-            })
-            .then(results => {
-                const nextPageInfo = parseLinkHeader(response.headers.get('Link')).next;
-                console.log(nextPageInfo);
-                if (nextPageInfo) {
-                    return fetchBranchLifeTimes(token, repo, nextPageInfo.url)
-                        .then(nextResults => results.concat(nextResults));
-                } else {
-                    return results;
-                }
-            })
+            });
+            const linkHeader = parseLinkHeader(response.headers.get('Link'));
+            console.log(linkHeader);
+            if (linkHeader && linkHeader.next) {
+                return fetchBranchLifeTimes(token, repo, linkHeader.next.url)
+                    .then(nextResults => results.concat(nextResults));
+            } else {
+                return results;
+            }
         }).catch(reason => {
             console.error("Could not fetch any PRs!");
             console.error(reason);
@@ -130,7 +129,7 @@ function sendMetrics(points) {
 async function fetchBranchLifeTimesOfRepos() {
     console.log("Start fetching branch life times...");
     const branchLifeTimes = await Promise.all(repos.map(repo => {
-        const initialPagePrUrl = "https://api.github.com/repos/" + repo.orga + "/" + repo.name + "/pulls?state=closed&base=" + repo.baseBranch + "&per_page=100";
+        const initialPagePrUrl = "https://api.github.com/repos/" + repo.orga + "/" + repo.name + "/pulls?state=closed&base=" + repo.baseBranch + "&sort=updated&per_page=100";
         return fetchBranchLifeTimes(environment.githubApiToken, repo, initialPagePrUrl);
     })).then(_.flatten);
     console.log("Finished fetching branch life times.");
