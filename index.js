@@ -8,7 +8,7 @@ const environment = {
 };
 
 const repos = [
-    // { orga: 'arrow-kt', name: 'arrow', baseBranch: 'master' },
+    { orga: 'arrow-kt', name: 'arrow', baseBranch: 'master' },
     { orga: 'JasonEtco', name: 'create-an-issue', baseBranch: 'master' },
 ];
 
