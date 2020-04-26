@@ -6,9 +6,6 @@ services:
             - "3000:3000"
         volumes: 
             - "grafana-data:/var/lib/grafana"
-            - "./grafana-config:/usr/app/config"
-        environment: 
-            GF_PATHS_CONFIG: "/usr/app/config/grafana.ini"
     graphite:
         image: graphiteapp/graphite-statsd
         ports: 
@@ -19,5 +16,8 @@ services:
             - "2024:2024"
             - "8125:8125/udp"
             - "8126:8126"
+        volumes: 
+            - "graphite-data:/opt/graphite/storage"
 volumes:
     grafana-data:
+    graphite-data:

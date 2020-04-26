@@ -8,7 +8,7 @@ const environment = {
 };
 
 const repos = [
-    { orga: 'arrow-kt', name: 'arrow', baseBranch: 'master' },
+    { orga: 'arrow-kt', name: 'arrow-core', baseBranch: 'master' },
     { orga: 'JasonEtco', name: 'create-an-issue', baseBranch: 'master' },
 ];
 
@@ -56,7 +56,16 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
                 console.error(reason);
                 return [];
             })
-            // .then(results => ({ results, pageInfo: parseLinkHeader(response.headers.get('Link')) }))
+            .then(results => {
+                const nextPageInfo = parseLinkHeader(response.headers.get('Link')).next;
+                console.log(nextPageInfo);
+                if (nextPageInfo) {
+                    return fetchBranchLifeTimes(token, repo, nextPageInfo.url)
+                        .then(nextResults => results.concat(nextResults));
+                } else {
+                    return results;
+                }
+            })
         }).catch(reason => {
             console.error("Could not fetch any PRs!");
             console.error(reason);
