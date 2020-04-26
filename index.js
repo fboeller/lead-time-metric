@@ -8,8 +8,14 @@ const environment = {
 };
 
 const repos = [
-    { orga: 'arrow-kt', name: 'arrow', baseBranch: 'master' }
+    // { orga: 'arrow-kt', name: 'arrow', baseBranch: 'master' },
+    { orga: 'JasonEtco', name: 'create-an-issue', baseBranch: 'master' },
 ];
+
+function removeNonWorkingHours(seconds) {
+    const noWorkPeriods = Math.floor(seconds / 60 / 60 / 16);
+    return seconds - noWorkPeriods * 16 * 60 * 60;
+}
 
 async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
     // TODO Resolve all pages to get all pull requests of a repository.
@@ -43,7 +49,7 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
                             baseBranch: repo.baseBranch,
                             repository: repo.name,
                             merged_at: pr.merged_at,
-                            durationSec: Math.ceil(durationMs / 1000)
+                            durationSec: removeNonWorkingHours(Math.ceil(durationMs / 1000))
                         }))
                 )
             ).catch(reason => {
