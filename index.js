@@ -18,6 +18,7 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
     return fetch(pagedPrUrl, createGitHubRequestObject(token))
         .then((response) => {
             if (!response.ok) {
+                fetchGitHubRateLimit(token).then(console.log);
                 throw new Error('Network response was not ok: ' + response.statusText);
             }
             return response;
@@ -29,6 +30,7 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
                     fetch(pr._links.commits.href, createGitHubRequestObject(token))
                         .then((response) => {
                             if (!response.ok) {
+                                fetchGitHubRateLimit(token).then(console.log);
                                 throw new Error('Network response was not ok: ' + response.statusText);
                             }
                             const body = response.json();
@@ -63,6 +65,10 @@ function createGitHubRequestObject(token) {
             'Authorization': "token " + token
         }
     };
+}
+
+function fetchGitHubRateLimit(token) {
+    return fetch("https://api.github.com/rate_limit", createGitHubRequestObject(token));
 }
 
 async function fetchMergeUntilReleaseTime(branchLifeTime) {
