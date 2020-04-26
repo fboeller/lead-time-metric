@@ -54,7 +54,8 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
                         }))
                 )
             ).catch(reason => {
-                console.error("Could not fetch commits of PR " + pr.url);
+                console.error("Could not fetch commits of PRs.");
+                console.error(prs.map(pr => pr.url));
                 console.error(reason);
                 return [];
             });
