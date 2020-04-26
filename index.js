@@ -8,6 +8,7 @@ const environment = {
 };
 
 const repos = [
+    { orga: 'arrow-kt', name: 'arrow', baseBranch: 'master' },
     { orga: 'arrow-kt', name: 'arrow-core', baseBranch: 'master' },
     { orga: 'JasonEtco', name: 'create-an-issue', baseBranch: 'master' },
 ];
@@ -129,7 +130,7 @@ function sendMetrics(points) {
 async function fetchBranchLifeTimesOfRepos() {
     console.log("Start fetching branch life times...");
     const branchLifeTimes = await Promise.all(repos.map(repo => {
-        const initialPagePrUrl = "https://api.github.com/repos/" + repo.orga + "/" + repo.name + "/pulls?state=closed&base=" + repo.baseBranch + "&per_page=10";
+        const initialPagePrUrl = "https://api.github.com/repos/" + repo.orga + "/" + repo.name + "/pulls?state=closed&base=" + repo.baseBranch + "&per_page=100";
         return fetchBranchLifeTimes(environment.githubApiToken, repo, initialPagePrUrl);
     })).then(_.flatten);
     console.log("Finished fetching branch life times.");
