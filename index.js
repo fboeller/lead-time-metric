@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const net = require('net');
 const parseLinkHeader = require('parse-link-header');
 const _ = require('lodash');
 
@@ -36,12 +37,11 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
                         })
                         .then(commits => commits.map(commit => commit.commit.committer.date)[0])
                         .then(commit => Date.parse(pr.merged_at) - Date.parse(commit))
-                        .then(durationMs => Math.ceil(durationMs / 1000 / 60))
-                        .then(durationMin => ({
+                        .then(durationMs => ({
                             baseBranch: repo.baseBranch,
                             repository: repo.name,
                             merged_at: pr.merged_at,
-                            durationMin
+                            durationSec: Math.ceil(durationMs / 1000)
                         }))
                 )
             ).catch(reason => {
@@ -94,14 +94,26 @@ async function fetchMergeUntilReleaseTime(branchLifeTime) {
         });
 }
 
-async function fetchAndUpdateBranchLifeTimes() {
+function sendMetrics(points) {
+    console.log("Start sending points to graphite...");
+    var socket = net.createConnection(2003, "127.0.0.1", () => {
+        for(const p of points) {
+            console.log(`${p.stat} ${p.value} ${p.timestamp}`);
+            socket.write(`${p.stat} ${p.value} ${p.timestamp}\n`);
+        }
+        socket.end();
+        console.log("Finished sending points to graphite.");
+    });
+}
+
+async function fetchBranchLifeTimesOfRepos() {
     console.log("Start fetching branch life times...");
     const branchLifeTimes = await Promise.all(repos.map(repo => {
         const initialPagePrUrl = "https://api.github.com/repos/" + repo.orga + "/" + repo.name + "/pulls?state=closed&base=" + repo.baseBranch + "&per_page=10";
         return fetchBranchLifeTimes(environment.githubApiToken, repo, initialPagePrUrl);
     })).then(_.flatten);
-    console.log(branchLifeTimes);
     console.log("Finished fetching branch life times.");
+    return branchLifeTimes;
 }
 
 async function fetchAndUpdateMergeUntilReleaseTimes() {
@@ -115,8 +127,17 @@ async function fetchAndUpdateMergeUntilReleaseTimes() {
 }
 
 async function main() {
-    fetchAndUpdateBranchLifeTimes();
+    const branchLifeTimes = await fetchBranchLifeTimesOfRepos();
+    console.log(branchLifeTimes);
     // fetchAndUpdateMergeUntilReleaseTimes();
+
+    const points = branchLifeTimes.map(point => ({
+        stat: "leadtime.branchlifetime." + point.repository,
+        value: point.durationSec,
+        timestamp: Math.ceil(Date.parse(point.merged_at) / 1000)
+    }));
+
+    sendMetrics(points);
 }
 
 main();
