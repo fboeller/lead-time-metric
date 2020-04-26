@@ -17,32 +17,27 @@ function removeNonWorkingHours(seconds) {
     return seconds - noWorkPeriods * 16 * 60 * 60;
 }
 
+function handleError(response, token) {
+    if (!response.ok) {
+        fetchGitHubRateLimit(token).then(console.log);
+        throw new Error('Network response was not ok: ' + response.statusText);
+    }
+    return response;
+}
+
 async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
     // TODO Resolve all pages to get all pull requests of a repository.
     // The maximum page size is 100
     // Note: GitHub rate limits its API.
     return fetch(pagedPrUrl, createGitHubRequestObject(token))
-        .then((response) => {
-            if (!response.ok) {
-                fetchGitHubRateLimit(token).then(console.log);
-                throw new Error('Network response was not ok: ' + response.statusText);
-            }
-            return response;
-        })
+        .then(response => handleError(response, token))
         .then(async response => {
             const prs = await response.json();
             return Promise.all(prs.filter(pr => pr.merged_at)
                 .map(pr =>
                     fetch(pr._links.commits.href, createGitHubRequestObject(token))
-                        .then((response) => {
-                            if (!response.ok) {
-                                fetchGitHubRateLimit(token).then(console.log);
-                                throw new Error('Network response was not ok: ' + response.statusText);
-                            }
-                            const body = response.json();
-                            // body.then(console.log);
-                            return body;
-                        })
+                        .then(response => handleError(response, token))
+                        .then(response => response.json())
                         .then(commits => commits.map(commit => commit.commit.committer.date)[0])
                         .then(commit => Date.parse(pr.merged_at) - Date.parse(commit))
                         .then(durationMs => ({
@@ -109,7 +104,7 @@ async function fetchMergeUntilReleaseTime(branchLifeTime) {
 function sendMetrics(points) {
     console.log("Start sending points to graphite...");
     var socket = net.createConnection(2003, "127.0.0.1", () => {
-        for(const p of points) {
+        for (const p of points) {
             console.log(`${p.stat} ${p.value} ${p.timestamp}`);
             socket.write(`${p.stat} ${p.value} ${p.timestamp}\n`);
         }
