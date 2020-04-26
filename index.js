@@ -22,36 +22,36 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
             }
             return response;
         })
-        .then(response =>
-            response.json().then(prs =>
-                Promise.all(prs.filter(pr => pr.merged_at)
-                    .map(pr =>
-                        fetch(pr._links.commits.href, createGitHubRequestObject(token))
-                            .then((response) => {
-                                if (!response.ok) {
-                                    throw new Error('Network response was not ok: ' + response.statusText);
-                                }
-                                const body = response.json();
-                                // body.then(console.log);
-                                return body;
-                            })
-                            .then(commits => commits.map(commit => commit.commit.committer.date)[0])
-                            .then(commit => Date.parse(pr.merged_at) - Date.parse(commit))
-                            .then(durationMs => Math.ceil(durationMs / 1000 / 60))
-                            .then(durationMin => ({
-                                baseBranch: repo.baseBranch,
-                                repository: repo.name,
-                                merged_at: pr.merged_at,
-                                durationMin
-                            }))
-                    )
-                ).catch(reason => {
-                    console.error("Could not fetch commits of PR " + pr.url);
-                    console.error(reason);
-                    return [];
-                })
-            )// .then(results => ({ results, pageInfo: parseLinkHeader(response.headers.get('Link')) }))
-        ).catch(reason => {
+        .then(async response => {
+            const prs = await response.json();
+            return Promise.all(prs.filter(pr => pr.merged_at)
+                .map(pr =>
+                    fetch(pr._links.commits.href, createGitHubRequestObject(token))
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error('Network response was not ok: ' + response.statusText);
+                            }
+                            const body = response.json();
+                            // body.then(console.log);
+                            return body;
+                        })
+                        .then(commits => commits.map(commit => commit.commit.committer.date)[0])
+                        .then(commit => Date.parse(pr.merged_at) - Date.parse(commit))
+                        .then(durationMs => Math.ceil(durationMs / 1000 / 60))
+                        .then(durationMin => ({
+                            baseBranch: repo.baseBranch,
+                            repository: repo.name,
+                            merged_at: pr.merged_at,
+                            durationMin
+                        }))
+                )
+            ).catch(reason => {
+                console.error("Could not fetch commits of PR " + pr.url);
+                console.error(reason);
+                return [];
+            })
+            // .then(results => ({ results, pageInfo: parseLinkHeader(response.headers.get('Link')) }))
+        }).catch(reason => {
             console.error("Could not fetch any PRs!");
             console.error(reason);
             return [];
