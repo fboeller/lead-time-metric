@@ -12,17 +12,23 @@ const repos = [
     { orga: 'JasonEtco', name: 'create-an-issue', baseBranch: 'master' },
 ];
 
-function removeNonWorkingHours(seconds) {
-    const noWorkPeriods = Math.floor(seconds / 60 / 60 / 16);
-    return seconds - noWorkPeriods * 16 * 60 * 60;
-}
-
 function handleError(response, token) {
     if (!response.ok) {
         fetchGitHubRateLimit(token).then(console.log);
         throw new Error('Network response was not ok: ' + response.statusText);
     }
     return response;
+}
+
+function removeNonWorkingHours(seconds) {
+    const noWorkPeriods = Math.floor(seconds / 60 / 60 / 16);
+    return seconds - noWorkPeriods * 16 * 60 * 60;
+}
+
+function computeBranchLifeTimeInSeconds(commits, mergedAt) {
+    const firstCommitDate = commits[0].commit.committer.date;
+    const durationMs =  Date.parse(mergedAt) - Date.parse(firstCommitDate);
+    return removeNonWorkingHours(Math.ceil(durationMs / 1000));
 }
 
 async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
@@ -38,13 +44,11 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
                     fetch(pr._links.commits.href, createGitHubRequestObject(token))
                         .then(response => handleError(response, token))
                         .then(response => response.json())
-                        .then(commits => commits.map(commit => commit.commit.committer.date)[0])
-                        .then(commit => Date.parse(pr.merged_at) - Date.parse(commit))
-                        .then(durationMs => ({
+                        .then(commits => ({
                             baseBranch: repo.baseBranch,
                             repository: repo.name,
                             merged_at: pr.merged_at,
-                            durationSec: removeNonWorkingHours(Math.ceil(durationMs / 1000))
+                            durationSec: computeBranchLifeTimeInSeconds(commits, pr.merged_at)
                         }))
                 )
             ).catch(reason => {
