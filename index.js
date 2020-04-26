@@ -1,5 +1,4 @@
 const fetch = require('node-fetch');
-const request = require('request-promise-native');
 const parseLinkHeader = require('parse-link-header');
 const _ = require('lodash');
 

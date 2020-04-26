@@ -6,8 +6,7 @@
   "dependencies": {
     "lodash": "^4.17.15",
     "node-fetch": "^2.6.0",
-    "parse-link-header": "^1.0.1",
-    "request-promise-native": "^1.0.8"
+    "parse-link-header": "^1.0.1"
   },
   "devDependencies": {},
   "scripts": {
