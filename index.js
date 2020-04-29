@@ -2,6 +2,8 @@ const fetch = require('node-fetch');
 const net = require('net');
 const parseLinkHeader = require('parse-link-header');
 const _ = require('lodash');
+const fs = require('fs');
+const util = require('util');
 
 const environment = {
     githubApiToken: process.env.GITHUB_API_TOKEN // Export GITHUB_API_TOKEN on your shell
@@ -32,16 +34,14 @@ function computeBranchLifeTimeInSeconds(commits, mergedAt) {
     return removeNonWorkingHours(Math.ceil(durationMs / 1000));
 }
 
-async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
-    // TODO Resolve all pages to get all pull requests of a repository.
-    // The maximum page size is 100
-    // Note: GitHub rate limits its API.
+async function fetchBranchLifeTimes(token, repo, pagedPrUrl, doneUntil) {
     return fetch(pagedPrUrl, createGitHubRequestObject(token))
         .then(response => handleError(response, token))
         .then(async response => {
             const prs = await response.json();
             const results = await Promise.all(prs
                 .filter(pr => pr.merged_at)
+                .filter(pr => !doneUntil || Date.parse(pr.merged_at) > Date.parse(doneUntil))
                 .map(pr =>
                     fetch(pr._links.commits.href, createGitHubRequestObject(token))
                         .then(response => handleError(response, token))
@@ -60,8 +60,7 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl) {
                 return [];
             });
             const linkHeader = parseLinkHeader(response.headers.get('Link'));
-            console.log(linkHeader);
-            if (linkHeader && linkHeader.next) {
+            if (linkHeader && linkHeader.next && results.length > 0) {
                 return fetchBranchLifeTimes(token, repo, linkHeader.next.url)
                     .then(nextResults => results.concat(nextResults));
             } else {
@@ -83,7 +82,8 @@ function createGitHubRequestObject(token) {
 }
 
 function fetchGitHubRateLimit(token) {
-    return fetch("https://api.github.com/rate_limit", createGitHubRequestObject(token));
+    return fetch("https://api.github.com/rate_limit", createGitHubRequestObject(token))
+        .then(response => response.json());
 }
 
 async function fetchMergeUntilReleaseTime(branchLifeTime) {
@@ -128,13 +128,32 @@ function sendMetrics(points) {
 }
 
 async function fetchBranchLifeTimesOfRepos() {
+    const fetchInfoBefore = await util.promisify(fs.readFile)('fetch_info.json', 'utf8').then(JSON.parse).catch(err => []);
+    console.log("Found fetch information.");
+    console.log(fetchInfoBefore);
     console.log("Start fetching branch life times...");
-    const branchLifeTimes = await Promise.all(repos.map(repo => {
-        const initialPagePrUrl = "https://api.github.com/repos/" + repo.orga + "/" + repo.name + "/pulls?state=closed&base=" + repo.baseBranch + "&sort=updated&per_page=100";
-        return fetchBranchLifeTimes(environment.githubApiToken, repo, initialPagePrUrl);
-    })).then(_.flatten);
+    const branchLifeTimesPerRepo = await Promise.all(repos.map(async repo => {
+        const rateLimit = await fetchGitHubRateLimit(environment.githubApiToken);
+        console.log("Remaining GitHub requests: " + rateLimit.resources.core.remaining);
+        console.log("Processing '" + repo.orga + "/" + repo.name + "'...");
+        const doneUntil = _.find(fetchInfoBefore, info => info.repository == repo.name);
+        const initialPagePrUrl = "https://api.github.com/repos/" + repo.orga + "/" + repo.name + "/pulls?state=closed&base=" + repo.baseBranch + "&sort=updated&direction=desc&per_page=100";
+        return await fetchBranchLifeTimes(environment.githubApiToken, repo, initialPagePrUrl, doneUntil);
+    }));
     console.log("Finished fetching branch life times.");
-    return branchLifeTimes;
+    console.log("Updating fetch information...");
+    const fetchInfoAfter = branchLifeTimesPerRepo
+        .map(branchLifeTimes => branchLifeTimes[0])
+        .filter(branchLifeTime => branchLifeTime)
+        .map(branchLifeTime => ({
+            repository: branchLifeTime.repository,
+            doneUntil: branchLifeTime.merged_at
+        }));
+    const mergedFetchInfo = _.uniqBy(fetchInfoAfter.concat(fetchInfoBefore), 'repository');
+    await util.promisify(fs.writeFile)('fetch_info.json', JSON.stringify(mergedFetchInfo));
+    console.log("Updated fetch information.");
+    console.log(mergedFetchInfo);
+    return _.flatten(branchLifeTimesPerRepo);
 }
 
 async function fetchAndUpdateMergeUntilReleaseTimes() {
