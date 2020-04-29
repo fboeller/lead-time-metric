@@ -4,24 +4,16 @@ const parseLinkHeader = require('parse-link-header');
 const _ = require('lodash');
 const fs = require('fs');
 const util = require('util');
+const axios = require('axios');
 
-const environment = {
-    githubApiToken: process.env.GITHUB_API_TOKEN // Export GITHUB_API_TOKEN on your shell
-};
+axios.defaults.baseURL = 'https://api.github.com';
+axios.defaults.headers.common['Authorization'] = "token " + process.env.GITHUB_API_TOKEN;
 
 const repos = [
     // { orga: 'arrow-kt', name: 'arrow', baseBranch: 'master' },
     // { orga: 'arrow-kt', name: 'arrow-core', baseBranch: 'master' },
     { orga: 'JasonEtco', name: 'create-an-issue', baseBranch: 'master' },
 ];
-
-function handleError(response, token) {
-    if (!response.ok) {
-        fetchGitHubRateLimit(token).then(console.log);
-        throw new Error('Network response was not ok: ' + response.statusText);
-    }
-    return response;
-}
 
 function removeNonWorkingHours(seconds) {
     const noWorkPeriods = Math.floor(seconds / 60 / 60 / 16);
@@ -34,18 +26,15 @@ function computeBranchLifeTimeInSeconds(commits, mergedAt) {
     return removeNonWorkingHours(Math.ceil(durationMs / 1000));
 }
 
-async function fetchBranchLifeTimes(token, repo, pagedPrUrl, doneUntil) {
-    return fetch(pagedPrUrl, createGitHubRequestObject(token))
-        .then(response => handleError(response, token))
+async function fetchBranchLifeTimes(repo, pagedPrUrl, doneUntil) {
+    return axios.get(pagedPrUrl)
         .then(async response => {
-            const prs = await response.json();
-            const results = await Promise.all(prs
+            const results = await Promise.all(response.data
                 .filter(pr => pr.merged_at)
                 .filter(pr => !doneUntil || Date.parse(pr.merged_at) > Date.parse(doneUntil))
                 .map(pr =>
-                    fetch(pr._links.commits.href, createGitHubRequestObject(token))
-                        .then(response => handleError(response, token))
-                        .then(response => response.json())
+                    axios.get(pr._links.commits.href)
+                        .then(response => response.data)
                         .then(commits => ({
                             baseBranch: repo.baseBranch,
                             repository: repo.orga + "/" + repo.name,
@@ -59,9 +48,9 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl, doneUntil) {
                 console.error(reason);
                 return [];
             });
-            const linkHeader = parseLinkHeader(response.headers.get('Link'));
+            const linkHeader = parseLinkHeader(response.headers['Link']);
             if (linkHeader && linkHeader.next && results.length > 0) {
-                return fetchBranchLifeTimes(token, repo, linkHeader.next.url)
+                return fetchBranchLifeTimes(repo, linkHeader.next.url)
                     .then(nextResults => results.concat(nextResults));
             } else {
                 return results;
@@ -73,28 +62,15 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl, doneUntil) {
         });
 }
 
-function createGitHubRequestObject(token) {
-    return {
-        headers: {
-            'Authorization': "token " + token
-        }
-    };
-}
-
-function fetchGitHubRateLimit(token) {
-    return fetch("https://api.github.com/rate_limit", createGitHubRequestObject(token))
-        .then(response => response.json());
+function fetchGitHubRateLimit() {
+    return axios.get("/rate_limit")
+        .then(response => response.data);
 }
 
 async function fetchMergeUntilReleaseTime(branchLifeTime) {
     // TODO Since GitHub pages the commits and also always gives us the latest commits first, this is not correct.
-    return fetch("https://api.github.com/repos/leanix/" + branchLifeTime.repository + "/commits?sha=" + branchLifeTime.baseBranch + "&since=" + branchLifeTime.merged_at, createGitHubRequestObject(environment.githubApiToken))
-        .then((response) => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok: ' + response.statusText);
-            }
-            return response.json();
-        })
+    return axios.get("/repos/leanix/" + branchLifeTime.repository + "/commits?sha=" + branchLifeTime.baseBranch + "&since=" + branchLifeTime.merged_at)
+        .then(response => response.data)
         .then(commits => commits
             .map(commit => commit.commit)
             .filter(commit => commit.message.startsWith("Merge release branch"))
@@ -134,12 +110,12 @@ async function fetchBranchLifeTimesOfRepos() {
     console.log("Start fetching branch life times...");
     const branchLifeTimesPerRepo = await Promise.all(repos.map(async repo => {
         const repoId = repo.orga + "/" + repo.name;
-        const rateLimit = await fetchGitHubRateLimit(environment.githubApiToken);
+        const rateLimit = await fetchGitHubRateLimit();
         console.log("Remaining GitHub requests: " + rateLimit.resources.core.remaining);
         console.log("Processing '" + repoId + "'...");
         const doneUntil = _.find(fetchInfoBefore, info => info.repository == repoId);
-        const initialPagePrUrl = "https://api.github.com/repos/" + repoId + "/pulls?state=closed&base=" + repo.baseBranch + "&sort=updated&direction=desc&per_page=100";
-        return await fetchBranchLifeTimes(environment.githubApiToken, repo, initialPagePrUrl, doneUntil);
+        const initialPagePrUrl = "/repos/" + repoId + "/pulls?state=closed&base=" + repo.baseBranch + "&sort=updated&direction=desc&per_page=100";
+        return await fetchBranchLifeTimes(repo, initialPagePrUrl, doneUntil);
     }));
     console.log("Finished fetching branch life times.");
     console.log("Updating fetch information...");
