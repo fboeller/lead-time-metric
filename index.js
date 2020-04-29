@@ -48,7 +48,7 @@ async function fetchBranchLifeTimes(token, repo, pagedPrUrl, doneUntil) {
                         .then(response => response.json())
                         .then(commits => ({
                             baseBranch: repo.baseBranch,
-                            repository: repo.name,
+                            repository: repo.orga + "/" + repo.name,
                             merged_at: pr.merged_at,
                             durationSec: computeBranchLifeTimeInSeconds(commits, pr.merged_at)
                         }))
@@ -133,11 +133,12 @@ async function fetchBranchLifeTimesOfRepos() {
     console.log(fetchInfoBefore);
     console.log("Start fetching branch life times...");
     const branchLifeTimesPerRepo = await Promise.all(repos.map(async repo => {
+        const repoId = repo.orga + "/" + repo.name;
         const rateLimit = await fetchGitHubRateLimit(environment.githubApiToken);
         console.log("Remaining GitHub requests: " + rateLimit.resources.core.remaining);
-        console.log("Processing '" + repo.orga + "/" + repo.name + "'...");
-        const doneUntil = _.find(fetchInfoBefore, info => info.repository == repo.name);
-        const initialPagePrUrl = "https://api.github.com/repos/" + repo.orga + "/" + repo.name + "/pulls?state=closed&base=" + repo.baseBranch + "&sort=updated&direction=desc&per_page=100";
+        console.log("Processing '" + repoId + "'...");
+        const doneUntil = _.find(fetchInfoBefore, info => info.repository == repoId);
+        const initialPagePrUrl = "https://api.github.com/repos/" + repoId + "/pulls?state=closed&base=" + repo.baseBranch + "&sort=updated&direction=desc&per_page=100";
         return await fetchBranchLifeTimes(environment.githubApiToken, repo, initialPagePrUrl, doneUntil);
     }));
     console.log("Finished fetching branch life times.");
@@ -172,7 +173,7 @@ async function main() {
     // fetchAndUpdateMergeUntilReleaseTimes();
 
     const points = branchLifeTimes.map(point => ({
-        stat: "leadtime.branchlifetime." + point.repository,
+        stat: "leadtime.branchlifetime." + point.repository.replace(/\//g, "-"),
         value: point.durationSec,
         timestamp: Math.ceil(Date.parse(point.merged_at) / 1000)
     }));
